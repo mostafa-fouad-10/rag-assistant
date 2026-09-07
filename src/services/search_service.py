@@ -1,29 +1,44 @@
-from src.helpers.data_loader import DocumentLoader
-from src.models.document_embedder import DocumentEmbedder
-from src.models.embedding_model import EmbeddingModel
-from src.search.engine import SemanticSearchEngine
+from typing import List
+
+from src.LLM.LLMFactory import LLMFactory
+from src.LLM.LLMEnums import LLMProvider
+from src.stores.vectordb.VectorDBFactory import VectorDBFactory
+from src.stores.vectordb.VectorDBEnums import VectorDBEnums
+from src.models.data_chunk import RetrievedDocument
 
 
 class SearchService:
 
     def __init__(self):
-        self.document_loader = DocumentLoader()
-        self.document_embedder = DocumentEmbedder()
-        self.embedding_model = EmbeddingModel()
-
-        self.documents = self.document_loader.load()
-
-        self.embeddings = self.document_embedder.embed(
-            self.documents
+        self.vector_db = VectorDBFactory.create(
+            VectorDBEnums.QDRANT
         )
+        self.vector_db.connect()
 
-        self.search_engine = SemanticSearchEngine(
-            embeddings=self.embeddings,
-            documents=self.documents["text"].tolist(),
+        self.embedding_provider = LLMFactory.create_embedding_provider(
+            LLMProvider.LOCAL.value
         )
+        self.embedding_provider.set_embedding_model(
+                model_id="all-MiniLM-L6-v2",
+                embedding_size=384
+            )
 
-    def search(self, query: str) -> list[dict]:
-        query_embedding = self.embedding_model.encode([query])[0]
+    def search_by_vector(
+    self,
+    collection_name: str,
+    query: str,
+    limit: int = 5,
+    file_id: str = None
+) -> List[RetrievedDocument]:
 
-        return self.search_engine.search(query_embedding)
-        
+        query_vector = self.embedding_provider.embed_text(query)
+
+        if query_vector is None:
+            return []
+
+        return self.vector_db.search_by_vector(
+            collection_name=collection_name,
+            vector=query_vector,
+            limit=limit,
+            file_id=file_id
+        )
